@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,13 +24,6 @@ var (
 	ServerError  = errors.New("StatusInternalServerError, please wait a minute.")
 )
 
-var timeDict = map[string]time.Duration{
-	"S": time.Second,
-	"M": time.Minute,
-	"H": time.Hour,
-	"D": time.Hour * 24,
-}
-
 type Dispatcher struct {
 	limit       int
 	deadline    int64
@@ -40,40 +32,19 @@ type Dispatcher struct {
 	redisClient *redis.Client
 }
 
-// create a limit dispatcher object with command and limit request number.
-func LimitDispatcher(command string, limit int, rdb *redis.Client) (*Dispatcher, error) {
-
+// LimitDispatcher limits number of request (`limit`) for `duration` time - that means that only
+// limit requests will be allowed within `duration`
+func LimitDispatcher(duration time.Duration, limit int, rdb *redis.Client) (*Dispatcher, error) {
+	if limit <= 0 {
+		return nil, LimitError
+	}
 	dispatcher := new(Dispatcher)
 	_, err := rdb.Ping(context.Background()).Result()
 	if err != nil {
 		return nil, err
 	}
 	dispatcher.redisClient = rdb
-
-	values := strings.Split(command, "-")
-	if len(values) != 2 {
-		log.Println("Some error with your input command!, the len of your command is ", len(values))
-		return nil, FormatError
-	}
-
-	unit, err := strconv.Atoi(values[0])
-	if err != nil {
-		return nil, FormatError
-	}
-	if unit <= 0 {
-		return nil, CommandError
-	}
-
-	if t, ok := timeDict[strings.ToUpper(values[1])]; ok {
-		dispatcher.period = time.Duration(unit) * t
-	} else {
-		return nil, FormatError
-	}
-
-	// limit should > 0
-	if limit <= 0 {
-		return nil, LimitError
-	}
+	dispatcher.period = duration
 	dispatcher.limit = limit
 
 	resetSHA, err := dispatcher.redisClient.ScriptLoad(context.Background(), ResetScript).Result()
@@ -91,30 +62,6 @@ func LimitDispatcher(command string, limit int, rdb *redis.Client) (*Dispatcher,
 	shaScript["normal"] = normalSHA
 	dispatcher.shaScript = shaScript
 	return dispatcher, nil
-}
-
-func (dispatch *Dispatcher) ParseCommand(command string) (time.Duration, error) {
-	var period time.Duration
-
-	values := strings.Split(command, "-")
-	if len(values) != 2 {
-		log.Println("Some error with your input command!, the len of your command is ", len(values))
-		return period, FormatError
-	}
-
-	unit, err := strconv.Atoi(values[0])
-	if err != nil {
-		return period, FormatError
-	}
-	if unit <= 0 {
-		return period, CommandError
-	}
-
-	if t, ok := timeDict[strings.ToUpper(values[1])]; ok {
-		return time.Duration(unit) * t, nil
-	} else {
-		return period, FormatError
-	}
 }
 
 // update the deadline
@@ -141,14 +88,13 @@ func (dispatch *Dispatcher) GetDeadLineWithString() string {
 	return time.Unix(dispatch.deadline, 0).Format(TimeFormat)
 }
 
-func (dispatch *Dispatcher) MiddleWare(command string, limit int) gin.HandlerFunc {
-	t, _ := dispatch.ParseCommand(command)
+func (dispatch *Dispatcher) MiddleWare(duration time.Duration, limit int) gin.HandlerFunc {
 
 	return func(ctx *gin.Context) {
 		now := time.Now().Unix()
 		clientIp := ctx.ClientIP()
 		deadline := dispatch.GetDeadLine()
-		routeDeadline := time.Now().Add(t).Unix()
+		routeDeadline := time.Now().Add(duration).Unix()
 		routeKey := ctx.FullPath() + ctx.Request.Method + clientIp // for single route limit in redis.
 		staticKey := clientIp                                      // for global limit search in redis.
 

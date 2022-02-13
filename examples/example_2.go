@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	limiter "github.com/davidleitw/gin-limiter"
 	"github.com/gin-gonic/gin"
@@ -18,13 +19,13 @@ func NewServer() *gin.Engine {
 		DB:       0,
 	})
 
-	dispatcher, _ := limiter.LimitDispatcher("2-M", 5, rdb)
+	dispatcher, _ := limiter.LimitDispatcher(2*time.Minute, 5, rdb)
 
-	server.POST("/post1", dispatcher.MiddleWare("20-S", 30), post1) // /post1
+	server.POST("/post1", dispatcher.MiddleWare(20*time.Second, 30), post1) // /post1
 
-	server.POST("/api/post2", dispatcher.MiddleWare("15-M", 40), post2) // /api/post2
+	server.POST("/api/post2", dispatcher.MiddleWare(15*time.Minute, 40), post2) // /api/post2
 
-	server.POST("/post3", dispatcher.MiddleWare("11-D", 10), post3) // /post3
+	server.POST("/post3", dispatcher.MiddleWare(11*(24*time.Hour), 10), post3) // /post3
 
 	return server
 }

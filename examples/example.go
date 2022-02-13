@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"net/http"
 
@@ -14,16 +15,16 @@ func main() {
 	server := gin.Default()
 	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", Password: "", DB: 0})
 
-	dispatcher, err := limiter.LimitDispatcher("24-M", 100, rdb)
+	dispatcher, err := limiter.LimitDispatcher(24*time.Minute, 100, rdb)
 	if err != nil {
 		log.Println(err)
 	}
 
-	server.POST("/ExamplePost1", dispatcher.MiddleWare("4-M", 20), func(ctx *gin.Context) {
+	server.POST("/ExamplePost1", dispatcher.MiddleWare(4*time.Minute, 20), func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "Hello ExamplePost1")
 	})
 
-	server.GET("/ExampleGet1", dispatcher.MiddleWare("5-M", 10), func(ctx *gin.Context) {
+	server.GET("/ExampleGet1", dispatcher.MiddleWare(5*time.Minute, 10), func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "Hello ExampleGet1")
 	})
 
